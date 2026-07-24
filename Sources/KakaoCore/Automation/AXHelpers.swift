@@ -186,6 +186,22 @@ public enum AXHelpers {
         return nil
     }
 
+    /// Find the first element matching an identifier, regardless of role.
+    /// KakaoTalk has changed the AX role of some identifiers (e.g. "chatrooms" went from
+    /// AXCheckBox to AXButton) across versions; the identifier alone is the stable match.
+    public static func findFirst(_ element: AXUIElement, identifier targetId: String, maxDepth: Int = 10, currentDepth: Int = 0) -> AXUIElement? {
+        guard currentDepth <= maxDepth else { return nil }
+        if identifier(element) == targetId {
+            return element
+        }
+        for child in children(element) {
+            if let found = findFirst(child, identifier: targetId, maxDepth: maxDepth, currentDepth: currentDepth + 1) {
+                return found
+            }
+        }
+        return nil
+    }
+
     /// Find the AXRow in a chat list whose name label matches the given text.
     /// KakaoTalk chat list: AXTable > AXRow > AXCell > AXStaticText(id="_NS:18")
     public static func findChatRow(_ table: AXUIElement, chatName: String, exact: Bool = false) -> AXUIElement? {

@@ -35,14 +35,14 @@ public final class KakaoAutomator {
         }
 
         // 4. Ensure we're on the Chats tab
-        if let chatroomsTab = AXHelpers.findFirst(mainWindow, role: "AXCheckBox", identifier: "chatrooms") {
+        if let chatroomsTab = AXHelpers.findFirst(mainWindow, identifier: "chatrooms") {
             _ = AXHelpers.performAction(chatroomsTab, kAXPressAction as String)
             Thread.sleep(forTimeInterval: 0.3)
         }
 
         // 5. Find the chat row in the list
         guard let table = AXHelpers.chatListTable(mainWindow) else {
-            throw AutomationError.chatNotFound(chatName)
+            throw AutomationError.chatNotFound(selfChat ? "self-chat (나와의 채팅)" : chatName)
         }
 
         let row: AXUIElement

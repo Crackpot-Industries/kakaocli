@@ -89,7 +89,7 @@ public enum ChatHarvester {
         Thread.sleep(forTimeInterval: 0.3)
 
         // 5. Switch to chats tab
-        if let tab = AXHelpers.findFirst(mainWindow, role: "AXCheckBox", identifier: "chatrooms") {
+        if let tab = AXHelpers.findFirst(mainWindow, identifier: "chatrooms") {
             _ = AXHelpers.performAction(tab, kAXPressAction as String)
             Thread.sleep(forTimeInterval: 0.3)
         }
