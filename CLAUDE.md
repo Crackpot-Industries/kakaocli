@@ -9,6 +9,38 @@ swift test
 
 No external dependencies besides `sqlcipher` (Homebrew). The `CSQLCipher` system library target wraps it via pkg-config.
 
+## Repository & Workflow
+
+This is our fork (`Crackpot-Industries/kakaocli`, public — GitHub does not allow
+private forks of public repos) of the upstream, lightly-maintained
+[`silver-flight-group/kakaocli`](https://github.com/silver-flight-group/kakaocli).
+Remotes: `origin` = our fork, `upstream` = the original.
+
+`main` is branch-protected: no direct pushes, no force-push, no
+deletion (applies to everyone, including admins). All changes —
+including small fixes — go through a feature branch + PR:
+
+```bash
+git checkout main && git pull origin main
+git checkout -b <type>/<short-description>   # e.g. feat/image-send, fix/thing
+# ... commit ...
+git push -u origin <branch>
+gh pr create --repo Crackpot-Industries/kakaocli --base main --head <branch> \
+  --title "..." --body "..."
+gh pr merge <n> --repo Crackpot-Industries/kakaocli --squash --delete-branch
+```
+
+Automation-layer changes (`AXHelpers`, `KakaoAutomator`, `ChatHarvester`)
+have no test coverage — verify manually against a live KakaoTalk
+install before merging, and say so in the PR's test plan. `--dry-run`
+on `send` does not exercise the automation layer at all (see
+`SendCommand.swift`) — never treat it as proof a send-path fix works.
+
+Bug fixes scoped independently of our own feature work (e.g. AX
+role/identifier drift from a KakaoTalk update) are worth upstreaming
+to `silver-flight-group/kakaocli` as a separate PR against `upstream`,
+regardless of what we're doing on our fork.
+
 ## Project Structure
 
 - `Sources/KakaoCore/` - Core library: database decryption, models, UI automation
