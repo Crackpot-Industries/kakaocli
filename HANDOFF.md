@@ -162,49 +162,35 @@ drifted from what the app currently renders — is exactly what broke
 `send`/`harvest` here, and will keep recurring against upstream
 KakaoTalk updates for as long as this stays UI-automation-based.
 
-## Extension we want to build: sending images
+## Image sending — implemented
 
-KakaoTalk's `send` (once fixed above) only sends text —
-`Sources/KakaoCLI/Commands/SendCommand.swift` has no attachment
-concept at all (`kakaocli send <chat> <message>`, nothing else).
-We want to add image sending. Proposed approach, not yet started:
+`kakaocli send <chat> [message] --image <path>` works end-to-end,
+verified against a live self-chat with both a large (1200x900, ~1.3MB)
+and a trivially small (64x64) test image. `message` is now optional on
+`SendCommand` (`ValidationError` if neither `message` nor `--image` is
+given) and doubles as the image's caption when `--image` is present.
 
-1. **Get the image onto the system pasteboard.** `NSPasteboard`
-   (AppKit) supports writing image data directly — read the file,
-   construct an `NSImage` (or write raw PNG/TIFF data with the
-   right `NSPasteboard.PasteboardType`), `pasteboard.clearContents()`
-   then `pasteboard.writeObjects([image])` or the raw-data
-   equivalent. This is standard, well-documented Cocoa; no new
-   dependency needed beyond what's already linked (this project
-   already uses AppKit-adjacent APIs for the live window/automation).
-2. **Focus the message input field** — already solved;
-   `KakaoAutomator.swift` already does this for text sends
-   (`AXHelpers.clickElement(inputField)` / `.focus(inputField)`
-   around step 9 of `sendMessage`).
-3. **Synthesize Cmd+V.** The Accessibility API doesn't have a
-   generic "paste" action, so this needs a real key-event
-   simulation via `CGEvent` (`CGEventCreateKeyboardEvent` with the
-   Cmd flag set, V key down/up) rather than an AX action — same
-   general technique `AXHelpers.pressKey`/`typeText` already use for
-   the Enter key and text entry, just needs the Cmd modifier added.
-4. **Wait for KakaoTalk to show an attachment preview** before
-   sending. Chat apps generally render a thumbnail/preview state
-   after a paste before the message is actually composed — sending
-   Enter too early might send a blank message or nothing. This step
-   needs its own AX investigation (what does the preview state look
-   like in the UI tree? `kakaocli inspect --open-chat <name>` after
-   manually pasting an image is the way to find out) — don't assume
-   the existing Enter-key send path just works unmodified.
-5. **CLI surface**: something like `kakaocli send <chat> --image
-   <path> [message]` (image with optional caption) rather than a
-   wholly separate command, to keep the existing chat-targeting
-   logic (`--me`, substring match) shared.
+Implementation: `KakaoAutomator.sendImage` (private, called from
+`sendMessage` when `imagePath` is set) — `NSImage(contentsOfFile:)` →
+`NSPasteboard.general.writeObjects([image])` → `Cmd+V` via
+`AXHelpers.pressKey(keyCode: 9, flags: .maskCommand)`.
 
-**Sequencing**: fix the Chats-tab role bug above *first*. Building
-image support on top of a send path that doesn't reliably reach the
-chat window at all would just inherit the same failure — there's no
-point debugging "does paste work" while "does send even open the
-chat" is still broken.
+The AX investigation flagged as a prerequisite turned out to matter:
+pasting an image opens an `AXSheet` ("Clipped Image" title) with a
+50-char caption `AXTextArea` (title "Enter a brief description.") and
+scoped `Cancel`/`Send` `AXButton`s — this is not optional UI to skip
+past, it has to be filled in (if a caption was given) and explicitly
+confirmed via its `Send` button, found and pressed via
+`AXHelpers.findAll(chatWindow, role: "AXSheet")` /
+`AXHelpers.findFirst(sheet, role:text:)` scoped to the sheet element
+(the outer chat window has its own unrelated "Send" button, so the
+search must be scoped to the sheet's subtree, not the whole window).
+One caveat carried into the code as a comment: very small/trivial
+images were observed sending immediately with no sheet at all in
+testing — `sendImage` polls for the sheet with a timeout and treats
+"no sheet appeared" as "already sent" rather than erroring, so this
+should degrade gracefully either way, but real-world images are large
+enough that the sheet path is what will actually run in practice.
 
 ## Why fork rather than keep pinning
 
