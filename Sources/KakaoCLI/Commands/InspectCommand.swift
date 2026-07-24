@@ -15,6 +15,9 @@ struct InspectCommand: ParsableCommand {
     @Option(name: .long, help: "Open a chat by name and inspect the chat window")
     var openChat: String?
 
+    @Flag(name: [.customLong("me")], help: "With --open-chat, open self-chat (나와의 채팅) instead of matching by name")
+    var selfChat = false
+
     func run() throws {
         let bundleId = "com.kakao.KakaoTalkMac"
         try AXHelpers.activateApp(bundleId: bundleId)
@@ -33,17 +36,18 @@ struct InspectCommand: ParsableCommand {
                 print("Could not find main window")
                 throw ExitCode.failure
             }
-            if let chatroomsTab = AXHelpers.findFirst(mainWindow, role: "AXCheckBox", identifier: "chatrooms") {
+            if let chatroomsTab = AXHelpers.findFirst(mainWindow, identifier: "chatrooms") {
                 _ = AXHelpers.performAction(chatroomsTab, kAXPressAction as String)
                 Thread.sleep(forTimeInterval: 0.3)
             }
             if let table = AXHelpers.chatListTable(mainWindow) {
-                if let row = AXHelpers.findChatRow(table, chatName: chatName) {
-                    print("Found chat: \(chatName), double-clicking to open...")
+                let row = selfChat ? AXHelpers.findSelfChatRow(table) : AXHelpers.findChatRow(table, chatName: chatName)
+                if let row {
+                    print("Found chat: \(selfChat ? "self-chat" : chatName), double-clicking to open...")
                     AXHelpers.doubleClickElement(row)
                     Thread.sleep(forTimeInterval: 1.0)
                 } else {
-                    print("Chat '\(chatName)' not found in chat list")
+                    print("Chat '\(selfChat ? "self-chat" : chatName)' not found in chat list")
                     throw ExitCode.failure
                 }
             }
