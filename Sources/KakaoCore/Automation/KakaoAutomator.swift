@@ -8,8 +8,11 @@ public final class KakaoAutomator {
 
     public init() {}
 
-    /// Send a message to a chat by navigating the UI.
-    public func sendMessage(to chatName: String, message: String, selfChat: Bool = false) throws {
+    /// Send a message and/or image to a chat by navigating the UI.
+    /// At least one of `message`/`imagePath` must be provided; if both are given and
+    /// `imagePath` triggers KakaoTalk's confirmation sheet, `message` is used as the
+    /// image's caption (KakaoTalk caps captions at 50 characters).
+    public func sendMessage(to chatName: String, message: String?, selfChat: Bool = false, imagePath: String? = nil) throws {
         // 1. Ensure KakaoTalk is running and logged in
         let stateBefore = AppLifecycle.detectState()
         try AppLifecycle.ensureReady(credentials: CredentialStore())
@@ -94,26 +97,89 @@ public final class KakaoAutomator {
             throw AutomationError.inputFieldNotFound
         }
 
-        // 9. Focus and type the message
+        // 9. Focus and send the image and/or message
         _ = AXHelpers.performAction(chatWindow, kAXRaiseAction as String)
         Thread.sleep(forTimeInterval: 0.3)
         AXHelpers.clickElement(inputField)
         Thread.sleep(forTimeInterval: 0.3)
 
-        if AXHelpers.setValue(inputField, message) {
-            Thread.sleep(forTimeInterval: 0.2)
-            AXHelpers.pressKey(keyCode: 36) // Return key
-        } else {
-            _ = AXHelpers.focus(inputField)
-            Thread.sleep(forTimeInterval: 0.1)
-            AXHelpers.typeText(message)
-            Thread.sleep(forTimeInterval: 0.2)
-            AXHelpers.pressKey(keyCode: 36) // Return key
+        if let imagePath {
+            try sendImage(imagePath, caption: message, inputField: inputField, chatWindow: chatWindow)
+        } else if let message {
+            if AXHelpers.setValue(inputField, message) {
+                Thread.sleep(forTimeInterval: 0.2)
+                AXHelpers.pressKey(keyCode: 36) // Return key
+            } else {
+                _ = AXHelpers.focus(inputField)
+                Thread.sleep(forTimeInterval: 0.1)
+                AXHelpers.typeText(message)
+                Thread.sleep(forTimeInterval: 0.2)
+                AXHelpers.pressKey(keyCode: 36) // Return key
+            }
         }
 
         // 10. Close the chat window
         Thread.sleep(forTimeInterval: 0.3)
         _ = AXHelpers.closeWindow(chatWindow)
+    }
+
+    /// Paste an image into the focused input field and send it.
+    ///
+    /// KakaoTalk-for-Mac's behavior after Cmd+V is inconsistent: most images (anything
+    /// beyond a trivial size/dimension) open a "Clipped Image" AXSheet with an optional
+    /// 50-character caption field and explicit Cancel/Send buttons; very small images have
+    /// been observed sending immediately with no sheet at all. This handles both: if a
+    /// sheet appears within the timeout, fill the caption (if any) and press its Send
+    /// button; if no sheet appears, assume the paste already sent the image directly.
+    private func sendImage(_ imagePath: String, caption: String?, inputField: AXUIElement, chatWindow: AXUIElement) throws {
+        guard let image = NSImage(contentsOfFile: imagePath) else {
+            throw AutomationError.sendFailed("Could not load image at '\(imagePath)'")
+        }
+
+        // Clear any stray draft text before pasting so it doesn't get sent as part of the image.
+        _ = AXHelpers.setValue(inputField, "")
+        _ = AXHelpers.focus(inputField)
+        Thread.sleep(forTimeInterval: 0.1)
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([image])
+
+        AXHelpers.pressKey(keyCode: 9, flags: .maskCommand) // Cmd+V
+        Thread.sleep(forTimeInterval: 0.3)
+
+        var sheet: AXUIElement?
+        let sheetDeadline = Date().addingTimeInterval(5.0)
+        while Date() < sheetDeadline {
+            if let found = AXHelpers.findAll(chatWindow, role: "AXSheet").first {
+                sheet = found
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+
+        guard let sheet else {
+            // No confirmation sheet appeared - the paste already sent the image directly.
+            return
+        }
+
+        if let caption, !caption.isEmpty {
+            let truncatedCaption = String(caption.prefix(50))
+            if let captionField = AXHelpers.findFirst(sheet, role: "AXTextArea", text: "Enter a brief description.") {
+                if !AXHelpers.setValue(captionField, truncatedCaption) {
+                    _ = AXHelpers.focus(captionField)
+                    Thread.sleep(forTimeInterval: 0.1)
+                    AXHelpers.typeText(truncatedCaption)
+                }
+                Thread.sleep(forTimeInterval: 0.2)
+            }
+        }
+
+        guard let sendButton = AXHelpers.findFirst(sheet, role: "AXButton", text: "Send") else {
+            throw AutomationError.sendFailed("Could not find Send button on image confirmation sheet")
+        }
+        _ = AXHelpers.performAction(sendButton, kAXPressAction as String)
+        Thread.sleep(forTimeInterval: 0.3)
     }
 
     /// Find the message input AXTextArea in a chat window.
