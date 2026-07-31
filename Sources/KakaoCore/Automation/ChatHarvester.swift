@@ -209,14 +209,13 @@ public enum ChatHarvester {
     // MARK: - Private Helpers
 
     /// Extract the display name from a chat list row.
+    /// The name is the first AXStaticText in the cell — see AXHelpers.findChatRow for why this
+    /// is matched positionally rather than by AXIdentifier.
     private static func extractName(from row: AXUIElement) -> String {
         for cell in AXHelpers.children(row) {
             guard AXHelpers.role(cell) == "AXCell" else { continue }
-            for child in AXHelpers.children(cell) {
-                if AXHelpers.role(child) == "AXStaticText" && AXHelpers.identifier(child) == "_NS:18" {
-                    return AXHelpers.value(child) ?? "(unknown)"
-                }
-            }
+            guard let nameField = AXHelpers.children(cell).first(where: { AXHelpers.role($0) == "AXStaticText" }) else { continue }
+            return AXHelpers.value(nameField) ?? "(unknown)"
         }
         return "(unknown)"
     }
